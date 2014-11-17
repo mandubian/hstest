@@ -1,0 +1,27 @@
+Name:   Test1
+Version:  1.0
+Author:   Pascal Voitot
+Category: Blabla
+Synopsis: Blabla
+Build-Type:     Simple
+Cabal-Version: >= 1.2
+
+Library
+  Build-Depends:  
+      base
+    , mtl
+    , HTTP
+    , pipes
+    , wai
+    , warp
+    , http-types
+    , blaze-builder
+    , pipes-bytestring
+    , directory
+    , bytestring
+
+  Exposed-modules:
+    Test1
+
+  Extensions:
+    OverloadedStrings

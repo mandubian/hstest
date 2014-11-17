@@ -1,0 +1,6 @@
+Create File of a Given Size
+Last week, I needed to test the speed of my VPN connection. My plan was to create a file of some given size (say 10M), and test copy it to another server across the VPN tunnel.
+
+My first task was to create a file of size 10M. On Solaris, it can be done simply by this command:
+
+$ mkfile 10m output.dat 

@@ -32,57 +32,64 @@ import Pipes
 import qualified Pipes.Prelude as P
 import qualified Pipes.ByteString as PB
 import qualified Data.ByteString.Char8 as ByteString
+import Database.HDBC.PostgreSQL           (Connection, connectPostgreSQL)
 
+import Control.Concurrent (threadDelay)
 
-application :: MVar Int -> Application
-application cref _ respond = do
-  modifyMVar cref $ \x -> do
-    resp <- respond $ responseLBS status200 [(hContentType, "text/plain")] $ 
-      toLazyByteString $ fromByteString "Hello World" <> fromShow x
-    return (x+1, resp)
-
-
-streamFileResp :: IO Response
-streamFileResp =  withFile "toto.txt" ReadMode $ \hIn -> do
-  return $ responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
-    runEffect $ for (PB.fromHandle hIn >-> P.map fromByteString) $ \builder -> lift $ do
-      send builder
-      flush
-
-streamFileResp2 :: IO Response
-streamFileResp2 =  bracket
-  (openFile "toto.txt" ReadMode)
-  (hClose)
-  (\hIn -> do
-    return $ responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
-      runEffect $ for (PB.fromHandle hIn >-> P.map fromByteString) $ \builder -> lift $ do
-        send builder
-        flush
-  )
-
-streamFileResp3 :: Response
-streamFileResp3 = responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
-  runEffect $ withFile "toto.txt" ReadMode $ \hIn ->
-    for (PB.fromHandle hIn >-> P.map fromByteString) $ \builder -> lift $ do
-      send builder
-      flush
-
-  --(\hIn  -> runEffect $ for (PB.fromHandle hIn >-> P.map fromByteString) $ \builder ->
-  --  lift $ ByteString.putStrLn $ toByteString builder)
-  --resp <- return $ responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
-  --          runEffect $ for (PB.fromHandle hIn >-> P.map fromByteString) $ \builder -> lift $ do
-  --            send builder
-  --            flush
-  --hClose hIn
-  --return resp
-
-app :: Application
-app _ respond = do
-  resp <- streamFileResp2
-  respond resp
-      
 main :: IO ()
 main = run 3000 $ app
+
+
+-- | Add a delay (in milliseconds) between each element
+{-# INLINABLE delay #-}
+delay :: Double -> Pipe a a IO r
+delay ms = for cat $ \a -> do
+  yield a
+  lift $ threadDelay (truncate (ms * 1000))
+
+
+streamFile :: Response
+streamFile = responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
+  withFile "toto.txt" ReadMode $ \hIn ->
+    runEffect $ for (PB.hGet 1 hIn >-> P.map fromByteString >-> delay 50) $ \builder -> lift $ do
+      send builder
+      flush
+
+
+app :: Application
+app _ respond = respond streamFile
+
+psql :: IO Connection
+psql = connectPostgreSQL "jdbc:postgresql://localhost/haskell"      
+
+
+--application :: MVar Int -> Application
+--application cref _ respond = do
+--  modifyMVar cref $ \x -> do
+--    resp <- respond $ responseLBS status200 [(hContentType, "text/plain")] $ 
+--      toLazyByteString $ fromByteString "Hello World" <> fromShow x
+--    return (x+1, resp)
+
+
+--streamFileResp :: IO Response
+--streamFileResp =  withFile "toto.txt" ReadMode $ \hIn -> do
+--  return $ responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
+--    runEffect $ for (PB.fromHandle hIn >-> P.map fromByteString) $ \builder -> lift $ do
+--      send builder
+--      flush
+
+--streamFileResp2 :: IO Response
+--streamFileResp2 =  bracket
+--  (openFile "toto.txt" ReadMode)
+--  (hClose)
+--  (\hIn -> do
+--    return $ responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
+--      runEffect $ for (PB.fromHandle hIn >-> P.map fromByteString) $ \builder -> lift $ do
+--        send builder
+--        flush
+--  )
+
+
 --main = run 3000 $ app
 --main = do
 --  str <- withFile "toto.txt" ReadMode hGetLine

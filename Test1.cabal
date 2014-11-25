@@ -19,6 +19,7 @@ Library
     , pipes-bytestring
     , directory
     , bytestring
+    , HDBC
     , HDBC-postgresql
 
   Exposed-modules:

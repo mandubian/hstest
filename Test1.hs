@@ -32,8 +32,10 @@ import Pipes
 import qualified Pipes.Prelude as P
 import qualified Pipes.ByteString as PB
 import qualified Data.ByteString.Char8 as ByteString
+import qualified Database.HDBC as HDBC       
+--import Database.HDBC                      (prepare, execute)
 import Database.HDBC.PostgreSQL           (Connection, connectPostgreSQL)
-
+import Database.HDBC.SqlValue
 import Control.Concurrent (threadDelay)
 
 main :: IO ()
@@ -59,9 +61,17 @@ streamFile = responseStream status200 [(hContentType, "text/plain")] $ \send flu
 app :: Application
 app _ respond = respond streamFile
 
-psql :: IO Connection
-psql = connectPostgreSQL "jdbc:postgresql://localhost/haskell"      
-
+psql :: IO ()
+psql = do
+  conn <- connectPostgreSQL "host=localhost dbname=haskell user=haskell"
+  HDBC.run conn "INSERT INTO test (id) VALUES (1)" []
+  HDBC.commit conn
+  res <- HDBC.quickQuery' conn "SELECT (id) from test" []
+  let r = map conv res
+  mapM_ putStrLn $ show r
+  HDBC.disconnect conn
+  where conv :: [SqlValue] -> Integer
+        conv [ id ] = (HDBC.fromSql id)::Integer
 
 --application :: MVar Int -> Application
 --application cref _ respond = do

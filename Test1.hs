@@ -68,10 +68,10 @@ psql = do
   HDBC.commit conn
   res <- HDBC.quickQuery' conn "SELECT (id) from test" []
   let r = map conv res
-  mapM_ putStrLn $ show r
+  mapM_ putStrLn $ r
   HDBC.disconnect conn
-  where conv :: [SqlValue] -> Integer
-        conv [ id ] = (HDBC.fromSql id)::Integer
+  where conv :: [SqlValue] -> String
+        conv [ id ] = show (HDBC.fromSql id)::Integer
 
 --application :: MVar Int -> Application
 --application cref _ respond = do

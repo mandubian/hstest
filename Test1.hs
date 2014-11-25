@@ -64,14 +64,27 @@ app _ respond = respond streamFile
 psql :: IO ()
 psql = do
   conn <- connectPostgreSQL "host=localhost dbname=haskell user=haskell"
-  HDBC.run conn "INSERT INTO test (id) VALUES (1)" []
+  HDBC.run conn "DROP TABLE test" []
+  HDBC.run conn "CREATE TABLE test (id INTEGER NOT NULL, descr VARCHAR(80))" []
   HDBC.commit conn
+
+  stmt <- HDBC.prepare conn "INSERT INTO test (id, descr) VALUES (?, ?)"
+
+  let ids = [1..100]
+  let words = map show ids
+  HDBC.executeMany stmt $ fmap toSql2 $ zip ids words
+  HDBC.commit conn
+
   res <- HDBC.quickQuery' conn "SELECT (id) from test" []
   let r = map conv res
-  mapM_ putStrLn $ r
+  mapM_ putStrLn r
   HDBC.disconnect conn
-  where conv :: [SqlValue] -> String
-        conv [ id ] = show (HDBC.fromSql id)::Integer
+
+  where toSql2 :: (Int, String) -> [SqlValue]
+        toSql2 (a, s) = [nToSql a, toSql s]
+
+        conv :: [SqlValue] -> String
+        conv [ id ] = HDBC.fromSql id
 
 --application :: MVar Int -> Application
 --application cref _ respond = do

@@ -76,7 +76,7 @@ psql = do
   HDBC.commit conn
 
   res <- HDBC.quickQuery' conn "SELECT (id) from test" []
-  let r = map conv res
+  let r = fmap conv res
   mapM_ putStrLn r
   HDBC.disconnect conn
 

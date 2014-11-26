@@ -31,60 +31,72 @@ import System.IO
 import Pipes        
 import qualified Pipes.Prelude as P
 import qualified Pipes.ByteString as PB
-import qualified Data.ByteString.Char8 as ByteString
-import qualified Database.HDBC as HDBC       
+import qualified Data.ByteString as B
+--import qualified Data.ByteString.Char8 as ByteString
+--import qualified Database.HDBC as HDBC       
 --import Database.HDBC                      (prepare, execute)
-import Database.HDBC.PostgreSQL           (Connection, connectPostgreSQL)
-import Database.HDBC.SqlValue
-import Control.Concurrent (threadDelay)
+--import Database.HDBC.PostgreSQL           (Connection, connectPostgreSQL)
+--import Database.HDBC.SqlValue
+import Control.Concurrent                 (threadDelay)
 
-main :: IO ()
-main = run 3000 $ app
+import Database.PostgreSQL.Simple
+import Database.PostgreSQL.Simple.Copy
+import Text.Printf                        (printf)
+import Data.Int                           (Int64)
+--main :: IO ()
+--main = run 3000 $ app
+
+
+psqlCopy :: Connection -> String -> String -> Producer B.ByteString IO () -> IO Int64
+psqlCopy conn table delimiter prod = do
+  copy conn "COPY ? FROM STDIN WITH DELIMITER '?'" [table, delimiter]
+  runEffect $ for prod (lift . (putCopyData conn))
+  putCopyEnd conn
 
 
 -- | Add a delay (in milliseconds) between each element
-{-# INLINABLE delay #-}
-delay :: Double -> Pipe a a IO r
-delay ms = for cat $ \a -> do
-  yield a
-  lift $ threadDelay (truncate (ms * 1000))
+--{-# INLINABLE delay #-}
+--delay :: Double -> Pipe a a IO r
+--delay ms = for cat $ \a -> do
+--  yield a
+--  lift $ threadDelay (truncate (ms * 1000))
 
 
-streamFile :: Response
-streamFile = responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
-  withFile "toto.txt" ReadMode $ \hIn ->
-    runEffect $ for (PB.hGet 1 hIn >-> P.map fromByteString >-> delay 50) $ \builder -> lift $ do
-      send builder
-      flush
+--streamFile :: Response
+--streamFile = responseStream status200 [(hContentType, "text/plain")] $ \send flush ->
+--  withFile "toto.txt" ReadMode $ \hIn ->
+--    runEffect $ for (PB.hGet 1 hIn >-> P.map fromByteString >-> delay 50) $ \builder -> lift $ do
+--      send builder
+--      flush
 
 
-app :: Application
-app _ respond = respond streamFile
+--app :: Application
+--app _ respond = respond streamFile
 
-psql :: IO ()
-psql = do
-  conn <- connectPostgreSQL "host=localhost dbname=haskell user=haskell"
-  HDBC.run conn "DROP TABLE test" []
-  HDBC.run conn "CREATE TABLE test (id INTEGER NOT NULL, descr VARCHAR(80))" []
-  HDBC.commit conn
+--psql :: IO ()
+--psql = do
+--  conn <- connectPostgreSQL "host=localhost dbname=haskell user=haskell"
+--  HDBC.run conn "DROP TABLE test" []
+--  HDBC.run conn "CREATE TABLE test (id INTEGER NOT NULL, descr VARCHAR(80))" []
+--  HDBC.commit conn
 
-  stmt <- HDBC.prepare conn "INSERT INTO test (id, descr) VALUES (?, ?)"
+--  stmt <- HDBC.prepare conn "INSERT INTO test (id, descr) VALUES (?, ?)"
 
-  let ids = [1..100]
-  let words = map show ids
-  HDBC.executeMany stmt $ fmap toSql2 $ zip ids words
-  HDBC.commit conn
+--  let ids = [1..100]
+--  let words = map show ids
+--  HDBC.executeMany stmt $ fmap toSql2 $ zip ids words
+--  HDBC.commit conn
 
-  res <- HDBC.quickQuery' conn "SELECT (id) from test" []
-  let r = fmap conv res
-  mapM_ putStrLn r
-  HDBC.disconnect conn
+--  res <- HDBC.quickQuery' conn "SELECT (id) from test" []
+--  let r = fmap conv res
+--  mapM_ putStrLn r
+--  HDBC.disconnect conn
 
-  where toSql2 :: (Int, String) -> [SqlValue]
-        toSql2 (a, s) = [nToSql a, toSql s]
+--  where toSql2 :: (Int, String) -> [SqlValue]
+--        toSql2 (a, s) = [nToSql a, toSql s]
 
-        conv :: [SqlValue] -> String
-        conv [ id ] = HDBC.fromSql id
+--        conv :: [SqlValue] -> String
+--        conv [ id ] = HDBC.fromSql id
 
 --application :: MVar Int -> Application
 --application cref _ respond = do

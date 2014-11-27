@@ -22,6 +22,7 @@ Library
     , HDBC
     , HDBC-postgresql
     , postgresql-simple
+    , random
 
   Exposed-modules:
     Test1

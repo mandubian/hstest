@@ -28,10 +28,12 @@ import Blaze.ByteString.Builder
 import Blaze.ByteString.Builder.Char.Utf8 (fromShow)
 import Data.Monoid                        ((<>))
 import System.IO                  
+import Control.Monad                       (replicateM_, replicateM)
+
+import qualified Data.ByteString as B
 import Pipes        
 import qualified Pipes.Prelude as P
 import qualified Pipes.ByteString as PB
-import qualified Data.ByteString as B
 --import qualified Data.ByteString.Char8 as ByteString
 --import qualified Database.HDBC as HDBC       
 --import Database.HDBC                      (prepare, execute)
@@ -39,20 +41,31 @@ import qualified Data.ByteString as B
 --import Database.HDBC.SqlValue
 import Control.Concurrent                 (threadDelay)
 
-import Database.PostgreSQL.Simple
-import Database.PostgreSQL.Simple.Copy
+import qualified Database.PostgreSQL.Simple as PSQL
+import qualified Database.PostgreSQL.Simple.Copy as PSQLC
 import Text.Printf                        (printf)
 import Data.Int                           (Int64)
+import System.Random
 --main :: IO ()
 --main = run 3000 $ app
 
 
-psqlCopy :: Connection -> String -> String -> Producer B.ByteString IO () -> IO Int64
+psqlCopy :: PSQL.Connection -> String -> String -> Producer B.ByteString IO () -> IO Int64
 psqlCopy conn table delimiter prod = do
-  copy conn "COPY ? FROM STDIN WITH DELIMITER '?'" [table, delimiter]
-  runEffect $ for prod (lift . (putCopyData conn))
-  putCopyEnd conn
+  PSQLC.copy conn "COPY ? FROM STDIN WITH DELIMITER '?'" [table, delimiter]
+  runEffect $ for prod (lift . (PSQLC.putCopyData conn))
+  PSQLC.putCopyEnd conn
 
+
+genData :: [B.ByteString] -> Int -> Producer B.ByteString IO ()
+genData cols n = do
+  yield $ (B.intercalate "," cols) `B.append` "\n"
+  replicateM_ n $ do
+    line <- lift $ fmap (\x -> x `B.append` "\n") csv
+    yield line
+    where 
+      rndValues = replicateM (length cols) $ show (randomIO :: IO Int)
+      csv = fmap (B.intercalate ",") rndValues
 
 -- | Add a delay (in milliseconds) between each element
 --{-# INLINABLE delay #-}

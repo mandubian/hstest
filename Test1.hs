@@ -30,10 +30,10 @@ import Data.Monoid                        ((<>))
 import System.IO                  
 import Control.Monad                       (replicateM_, replicateM)
 
-import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as B
 import Pipes        
 import qualified Pipes.Prelude as P
-import qualified Pipes.ByteString as PB
+--import qualified Pipes.ByteString as PB
 --import qualified Data.ByteString.Char8 as ByteString
 --import qualified Database.HDBC as HDBC       
 --import Database.HDBC                      (prepare, execute)
@@ -50,22 +50,67 @@ import System.Random
 --main = run 3000 $ app
 
 
-psqlCopy :: PSQL.Connection -> String -> String -> Producer B.ByteString IO () -> IO Int64
+
+
+newtype RowNb = RowNb Int
+newtype ColNb = ColNb Int
+newtype FieldSz = FieldSz Int 
+
+
+genRndString :: RandomGen g => g -> FieldSz -> (String, g)
+genRndString g (FieldSz sz) =
+  (take sz $ randomRs ('a', 'z') g1, g2)
+  where (g1, g2) = split g
+
+
+genRow :: RandomGen g => g -> ColNb -> FieldSz -> (g, [String])
+genRow g (ColNb nb) sz = step g [] nb
+  where step g ss 0 = (g, ss)
+        step g ss n = 
+          let (s, g2) = genRndString g sz in step g2 (s:ss) (n-1)
+
+genRows :: [B.ByteString] -> RowNb -> FieldSz -> Producer B.ByteString IO ()
+genRows cols (RowNb nb) sz = do
+  yield $ (B.intercalate "," cols) `B.append` "\n"
+  g <- lift getStdGen
+  yield $ step g "" nb
+  where nbCols = ColNb $ length cols
+
+        step g s 0 = s
+        step g s n = let (g', s') = genCsvRow g
+                     in step g' (s `B.append` (s' `B.append` "\n")) (n-1)
+        
+        genCsvRow :: RandomGen g => g -> (g, B.ByteString)
+        genCsvRow g = let (g', ss) = genRow g nbCols sz 
+                      in (g', B.intercalate "," $ fmap B.pack ss)
+
+
+showData = runEffect $
+  for (genRows ["alpha", "beta", "gamma", "delta"] (RowNb 100) (FieldSz 10)) (lift . B.putStr)
+
+
+newtype Table = Table String
+
+psqlCopy :: PSQL.Connection -> Table -> String -> Producer B.ByteString IO () -> IO Int64
 psqlCopy conn table delimiter prod = do
   PSQLC.copy conn "COPY ? FROM STDIN WITH DELIMITER '?'" [table, delimiter]
   runEffect $ for prod (lift . (PSQLC.putCopyData conn))
   PSQLC.putCopyEnd conn
 
+psql :: Table -> IO ()
+psql t@(Table tbl) = do
+  conn <- connectPostgreSQL "host=localhost dbname=haskell user=haskell"
+  HDBC.run conn "DROP TABLE %s" [tbl]
+  HDBC.run conn "CREATE TABLE %s (\
+                \ id INTEGER NOT NULL,\
+                \ alpha VARCHAR(80),\
+                \ beta VARCHAR(80),\
+                \ gamma VARCHAR(80)\
+                \ )" [tbl]
+  HDBC.commit conn
+  psqlCopy conn t "," prod 
+  where prod = genRows ["alpha", "beta", "gamma"] (RowNb 3) (FieldSz 10) 
 
-genData :: [B.ByteString] -> Int -> Producer B.ByteString IO ()
-genData cols n = do
-  yield $ (B.intercalate "," cols) `B.append` "\n"
-  replicateM_ n $ do
-    line <- lift $ fmap (\x -> x `B.append` "\n") csv
-    yield line
-    where 
-      rndValues = replicateM (length cols) $ show (randomIO :: IO Int)
-      csv = fmap (B.intercalate ",") rndValues
 
 -- | Add a delay (in milliseconds) between each element
 --{-# INLINABLE delay #-}

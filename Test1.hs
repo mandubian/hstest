@@ -54,7 +54,8 @@ import System.Random
 
 newtype RowNb = RowNb Int
 newtype ColNb = ColNb Int
-newtype FieldSz = FieldSz Int 
+newtype FieldSz = FieldSz Int
+newtype Idx = Idx Int
 
 
 genRndString :: RandomGen g => g -> FieldSz -> (String, g)
@@ -63,56 +64,66 @@ genRndString g (FieldSz sz) =
   where (g1, g2) = split g
 
 
-genRow :: RandomGen g => g -> ColNb -> FieldSz -> (g, [String])
-genRow g (ColNb nb) sz = step g [] nb
-  where step g ss 0 = (g, ss)
+genRow :: RandomGen g => g -> Idx -> ColNb -> FieldSz -> (g, [String])
+genRow g (Idx idx) (ColNb nb) sz = step g [(show idx)] nb
+  where step g ss 1 = (g, reverse ss)
         step g ss n = 
           let (s, g2) = genRndString g sz in step g2 (s:ss) (n-1)
 
 genRows :: [B.ByteString] -> RowNb -> FieldSz -> Producer B.ByteString IO ()
 genRows cols (RowNb nb) sz = do
-  yield $ (B.intercalate "," cols) `B.append` "\n"
+  --yield $ (B.intercalate "," cols) `B.append` "\n"
   g <- lift getStdGen
   yield $ step g "" nb
   where nbCols = ColNb $ length cols
 
         step g s 0 = s
-        step g s n = let (g', s') = genCsvRow g
+        step g s n = let (g', s') = genCsvRow g (Idx (nb - n))
                      in step g' (s `B.append` (s' `B.append` "\n")) (n-1)
         
-        genCsvRow :: RandomGen g => g -> (g, B.ByteString)
-        genCsvRow g = let (g', ss) = genRow g nbCols sz 
+        genCsvRow :: RandomGen g => g -> Idx -> (g, B.ByteString)
+        genCsvRow g idx = let (g', ss) = genRow g idx nbCols sz 
                       in (g', B.intercalate "," $ fmap B.pack ss)
 
 
 showData = runEffect $
-  for (genRows ["alpha", "beta", "gamma", "delta"] (RowNb 100) (FieldSz 10)) (lift . B.putStr)
+  for (genRows ["id", "alpha", "beta", "gamma"] (RowNb 100) (FieldSz 10)) (lift . B.putStr)
 
 
 newtype Table = Table String
 
-psqlCopy :: PSQL.Connection -> Table -> String -> Producer B.ByteString IO () -> IO Int64
-psqlCopy conn (Table tbl) delimiter prod = do
-  PSQLC.copy conn "COPY ? FROM STDIN WITH DELIMITER '?'" [tbl, delimiter]
+psqlCopy :: PSQL.Connection -> String -> Producer B.ByteString IO () -> IO Int64
+psqlCopy conn delimiter prod = do
+  PSQLC.copy_ conn "COPY test FROM STDIN (FORMAT CSV)"
   runEffect $ for prod (lift . (PSQLC.putCopyData conn))
+  --mapM_ (PSQLC.putCopyData conn) copyRows
   PSQLC.putCopyEnd conn
+  where copyRows = [ "1,foo1,foo2,foo3\n"
+                    ,"2,bar1,bar2,bar3\n"]
 
-psql :: Table -> IO Int64
-psql t@(Table tbl) = do
+psql :: IO Int64
+psql = do
   conn <- PSQL.connect  PSQL.defaultConnectInfo 
                         { PSQL.connectHost     ="localhost"
                         , PSQL.connectDatabase ="haskell"
                         , PSQL.connectUser     ="haskell"
                         }
-  PSQL.execute conn "DROP TABLE ?" (PSQL.Only tbl)
-  PSQL.execute conn "CREATE TABLE ? (\
-                  \id INTEGER NOT NULL,\
-                  \alpha VARCHAR(80),\
-                  \beta VARCHAR(80),\
-                  \gamma VARCHAR(80)\
-                  \)" (PSQL.Only tbl)
-  psqlCopy conn t "," prod
-  where prod = genRows ["alpha", "beta", "gamma"] (RowNb 3) (FieldSz 10) 
+  PSQL.execute_ conn "DROP TABLE IF EXISTS test"
+  PSQL.execute_ conn "CREATE TABLE test (\
+                      \id INTEGER NOT NULL,\
+                      \alpha VARCHAR(80),\
+                      \beta VARCHAR(80),\
+                      \gamma VARCHAR(80)\
+                      \)"
+  psqlCopy conn "," prod
+  where prod = genRows ["id", "alpha", "beta", "gamma"] (RowNb 30) (FieldSz 10) 
+
+
+
+
+
+
+
 
 
 -- | Add a delay (in milliseconds) between each element

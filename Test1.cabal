@@ -23,6 +23,8 @@ Library
     , HDBC-postgresql
     , postgresql-simple
     , random
+    , amazonka
+    , amazonka-s3
 
   Exposed-modules:
     Test1

@@ -92,23 +92,26 @@ showData = runEffect $
 newtype Table = Table String
 
 psqlCopy :: PSQL.Connection -> Table -> String -> Producer B.ByteString IO () -> IO Int64
-psqlCopy conn table delimiter prod = do
-  PSQLC.copy conn "COPY ? FROM STDIN WITH DELIMITER '?'" [table, delimiter]
+psqlCopy conn (Table tbl) delimiter prod = do
+  PSQLC.copy conn "COPY ? FROM STDIN WITH DELIMITER '?'" [tbl, delimiter]
   runEffect $ for prod (lift . (PSQLC.putCopyData conn))
   PSQLC.putCopyEnd conn
 
-psql :: Table -> IO ()
+psql :: Table -> IO Int64
 psql t@(Table tbl) = do
-  conn <- connectPostgreSQL "host=localhost dbname=haskell user=haskell"
-  HDBC.run conn "DROP TABLE %s" [tbl]
-  HDBC.run conn "CREATE TABLE %s (\
-                \ id INTEGER NOT NULL,\
-                \ alpha VARCHAR(80),\
-                \ beta VARCHAR(80),\
-                \ gamma VARCHAR(80)\
-                \ )" [tbl]
-  HDBC.commit conn
-  psqlCopy conn t "," prod 
+  conn <- PSQL.connect  PSQL.defaultConnectInfo 
+                        { PSQL.connectHost     ="localhost"
+                        , PSQL.connectDatabase ="haskell"
+                        , PSQL.connectUser     ="haskell"
+                        }
+  PSQL.execute conn "DROP TABLE ?" (PSQL.Only tbl)
+  PSQL.execute conn "CREATE TABLE ? (\
+                  \id INTEGER NOT NULL,\
+                  \alpha VARCHAR(80),\
+                  \beta VARCHAR(80),\
+                  \gamma VARCHAR(80)\
+                  \)" (PSQL.Only tbl)
+  psqlCopy conn t "," prod
   where prod = genRows ["alpha", "beta", "gamma"] (RowNb 3) (FieldSz 10) 
 
 
